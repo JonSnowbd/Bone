@@ -28,6 +28,8 @@ namespace bone.UISpace.Example
                 // "destination" -> This is the identification ID of the request, you should always keep this the same if you are updating the same marker.
                 // Marker -> This is a reference to the sprite you want it to show, you can change this in real time and it will seamlessly change.
                 // new Vector3(...) -> This is the in-world location you want
+                // 2f -> The duration of the request. If you want this to disappear after 2 seconds, set this to 2f. if you want this to only show on the frame its been requested, set it to null
+                // true -> This is whether it should fade out as the duration expires. pointless if the previous value is null.
                 UISpace.Instance.Request("destination", Marker, new Vector3(tar.x, 0f, tar.y), 2f, true);
 
             }

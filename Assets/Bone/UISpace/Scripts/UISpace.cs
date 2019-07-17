@@ -4,14 +4,88 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace bone.UISpace
+namespace Bone.UISpace
 {
     public class UISpace : MonoSingleton<UISpace>
     {
         public Camera SourceCamera;
         public RectTransform TargetCanvas;
-        private class UISpaceRegister
+        public class Reference
         {
+            public UISpaceRegister Register;
+
+            public Reference(UISpace parent, string id, Vector3 pos)
+            {
+                var go = new GameObject();
+                go.transform.parent = parent.TargetCanvas;
+                go.name = id;
+                var im = go.AddComponent<Image>();
+                var Reg = new UISpaceRegister();
+                Reg.UIReference = im;
+
+                Register = Reg;
+                parent.Lookup.Add(id, this);
+            }
+            public Reference Fades(bool sw)
+            {
+                if(Register.ShouldFade != sw)
+                    Register.ShouldFade = sw;
+                return this;
+            }
+            public Reference WithSprite(Sprite s)
+            {
+                if (Register.Sprite != s)
+                    Register.SetSprite(s);
+                return this;
+            }
+            public Reference Colored(Color c)
+            {
+                if (Register.OriginalColor != c)
+                    Register.SetColor(c);
+                return this;
+            }
+            public Reference WithDuration(float f)
+            {
+                if(f != Register.Duration)
+                    Register.Duration = f;
+                return this;
+            }
+            public Reference Sized(float f)
+            {
+                if(Register.SpriteSize.HasValue == false||(f != Register.SpriteSize.Value.x || f != Register.SpriteSize.Value.y))
+                {
+                    Register.SetSize(new Vector2(f, f));
+                }
+                return this;
+            }
+            public Reference NativeSized()
+            {
+                if (Register.SpriteSize.HasValue)
+                {
+                    Register.SetSize(null);
+                }
+                return this;
+            }
+            public Reference UnevenSized(Vector2 s)
+            {
+                if(Register.SpriteSize.HasValue == false || Register.SpriteSize.Value != s)
+                {
+                    Register.SpriteSize = s;
+                }
+                return this;
+            }
+            public Reference DestroyWhenExpired()
+            {
+                Register.ShouldSweep = true;
+                return this;
+            }
+        }
+        public class UISpaceRegister
+        {
+            public bool ShouldSweep = false;
+            public Color OriginalColor { get; set; }
+            private Color _trueColor { get; set; }
+            public Vector2? SpriteSize { get; set; }
             public float TimeSinceLastRequest { get; set; }
             public Sprite Sprite { get; set; }
             public Vector3 TargetPosition { get; set; }
@@ -19,75 +93,132 @@ namespace bone.UISpace
             public bool ShouldFade { get; set; }
             public float Duration { get; set; }
 
+            private bool IsActive = true;
+
+            public void EnableRegister()
+            {
+                if (IsActive)
+                    return;
+                if(UIReference != null)
+                {
+                    UIReference.gameObject.SetActive(true);
+                }
+                IsActive = true;
+            }
+            public void DisableRegister()
+            {
+                if (!IsActive)
+                    return;
+                if(UIReference != null)
+                {
+                    UIReference.gameObject.SetActive(false);
+                }
+                IsActive = false;
+            }
+
             public void SetSprite(Sprite s)
             {
                 Sprite = s;
                 if(UIReference != null)
                 {
+                    UIReference.color = OriginalColor;
                     UIReference.sprite = s;
-                    UIReference.SetNativeSize();
+                    if (SpriteSize.HasValue)
+                    {
+                        UIReference.rectTransform.sizeDelta = SpriteSize.Value;
+                    }
+                    else
+                    {
+                        UIReference.SetNativeSize();
+                    }
+                }
+            }
+            public void SetColor(Color c)
+            {
+                OriginalColor = c;
+                if(UIReference != null)
+                {
+                    UIReference.color = c;
+                }
+            }
+            public void SetAlpha(float o)
+            {
+                if(UIReference != null)
+                {
+                    var oc = OriginalColor;
+                    UIReference.color = new Color(oc.r, oc.g, oc.b, OriginalColor.a * o);
+                }
+            }
+            public void SetSize(Vector2? im)
+            {
+                SpriteSize = im;
+                if(UIReference != null)
+                {
+                    if (SpriteSize.HasValue)
+                    {
+                        UIReference.rectTransform.sizeDelta = SpriteSize.Value;
+                    }
+                    else
+                    {
+                        UIReference.SetNativeSize();
+                    }
                 }
             }
         }
-        private Dictionary<string, UISpaceRegister> Lookup = new Dictionary<string, UISpaceRegister>();
-        public GameObject Request(string ident, Sprite icon, Vector3 world_position, float duration = 0f, bool fade = false)
+        private Dictionary<string, Reference> Lookup = new Dictionary<string, Reference>();
+        public Reference Request(string id, Vector3 pos)
+        {
+            var r = GetOrCreate(id);
+            r.Register.TargetPosition = pos;
+            r.Register.TimeSinceLastRequest = 0f;
+            return r;
+        }
+        protected Reference GetOrCreate(string ident)
         {
             if (Lookup.ContainsKey(ident))
             {
-                var register = Lookup[ident];
-                register.TimeSinceLastRequest = 0f;
-                if (icon != register.Sprite)
-                    register.SetSprite(icon);
-                if (world_position != register.TargetPosition)
-                    register.TargetPosition = world_position;
-                return register.UIReference.gameObject;
+                return Lookup[ident];
             }
             else
             {
-                var go = new GameObject();
-                go.transform.parent = TargetCanvas;
-                go.name = ident;
-                var im = go.AddComponent<Image>();
-                var reg = new UISpaceRegister()
-                {
-                    TimeSinceLastRequest = 0f,
-                    Sprite = icon,
-                    ShouldFade = fade,
-                    Duration = duration,
-                    TargetPosition = world_position,
-                    UIReference = im
-                };
-                reg.SetSprite(icon);
-                Lookup[ident] = reg;
-                return reg.UIReference.gameObject;
+                var re = new Reference(this, ident, Vector3.zero);
+                return re;
             }
         }
-        public void DestroyLookup(string ident)
+        private void OnEnable()
         {
-            if (Lookup.ContainsKey(ident))
+            if(SourceCamera == null)
             {
-                Destroy(Lookup[ident].UIReference.gameObject);
-                Lookup.Remove(ident);
+                SourceCamera = Camera.main;
+            }
+            if(TargetCanvas == null)
+            {
+                TargetCanvas = FindObjectOfType<Canvas>().GetComponent<RectTransform>();
             }
         }
         private void FixedUpdate()
         {
-            foreach(var reg in Lookup.Values)
+            foreach(var refer in Lookup.Values)
             {
+                var reg = refer.Register;
                 if(reg.TimeSinceLastRequest > reg.Duration)
                 {
-                    reg.UIReference.color = new Color(1, 1, 1, 0);
+                    reg.DisableRegister();
                     continue;
+                }
+                else
+                {
+                    reg.EnableRegister();
                 }
                 
                 if (reg.ShouldFade && reg.TimeSinceLastRequest != 0f && reg.Duration > 0f)
                 {
                     var alph = (reg.Duration - reg.TimeSinceLastRequest) / reg.Duration;
-                    reg.UIReference.color = new Color(1, 1, 1, alph);
+                    reg.SetAlpha(alph);
                 }
                 else
                 {
-                    reg.UIReference.color = new Color(1, 1, 1, 1);
+                    reg.SetAlpha(1f);
                 }
                 Vector2 vp = SourceCamera.WorldToViewportPoint(reg.TargetPosition);
                 var proper = new Vector2(
